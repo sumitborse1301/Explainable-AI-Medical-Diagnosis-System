@@ -11,7 +11,7 @@ import time
 
 
 # --- GROQ API helper for text generation (free and fast) ---
-GROQ_API_KEY = "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"  # <-- Replace with your actual key from https://console.groq.com
+GROQ_API_KEY = ""  # <-- Replace with your actual key from https://console.groq.com
 
 import time
 

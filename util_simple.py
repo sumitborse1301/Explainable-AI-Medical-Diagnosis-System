@@ -29,7 +29,7 @@ from reportlab.lib.units import inch
 
 
 Entrez.email = "sumitborse13@gmail.com"
-Entrez.api_key = "2f3520aff44f6837b8be3def09a97d3f2f09"
+Entrez.api_key = ""
 Entrez.tool = "MedicalImagingAnalyzer"
 
 
