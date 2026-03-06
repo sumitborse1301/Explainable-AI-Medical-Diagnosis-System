@@ -12,3 +12,8 @@ grad-cam
 timm
 torchxrayvision
 pydicom
+nibabel
+scikit-learn
+scikit-image
+pandas
+matplotlib
