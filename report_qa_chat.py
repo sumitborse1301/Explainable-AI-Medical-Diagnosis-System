@@ -11,7 +11,7 @@ import time
 
 
 # --- GROQ API helper for text generation (free and fast) ---
-GROQ_API_KEY = ""  # <-- Replace with your actual key from https://console.groq.com
+GROQ_API_KEY = "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"  # <-- Replace with your actual key from https://console.groq.com
 
 import time
 
@@ -72,6 +72,11 @@ class ReportQASystem:
         self.api_key = api_key
         self.conversation_history = []
         self.analysis_store = self.load_analysis_store()
+
+    def clear_history(self):
+        """Clear conversation history"""
+        self.conversation_history = []
+
 
     def load_analysis_store(self):
         """Load the analysis store from disk"""
@@ -209,7 +214,7 @@ class ReportQASystem:
             similarities.append((similarity, context))
 
 
-        similarities.sort(reverse=True)
+        similarities.sort(key=lambda x: x[0], reverse=True)
         top_contexts = [context["text"] for _, context in similarities[:top_k]]
 
         return top_contexts
@@ -262,6 +267,14 @@ class ReportQAChat:
             with open("qa_chat_store.json", "r") as f:
                 return json.load(f)
         return {"rooms": {}}
+
+    def clear_room_messages(self, room_id):
+        if room_id in self.qa_chat_store["rooms"]:
+            self.qa_chat_store["rooms"][room_id]["messages"] = []
+            self.save_qa_chat_store()
+            return True
+        return False
+
 
     def save_qa_chat_store(self):
         with open("qa_chat_store.json", "w") as f:
@@ -330,3 +343,5 @@ class ReportQAChat:
             self.save_qa_chat_store()
             return True
         return False
+    
+    

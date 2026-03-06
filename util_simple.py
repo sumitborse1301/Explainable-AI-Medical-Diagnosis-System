@@ -24,12 +24,14 @@ from reportlab.platypus import ListFlowable, ListItem
 from reportlab.lib.units import inch
 from reportlab.platypus import Image as RPImage
 from reportlab.lib.units import inch
+import re
+import random
 
 
 
 
 Entrez.email = "sumitborse13@gmail.com"
-Entrez.api_key = ""
+Entrez.api_key = "2f3520aff44f6837b8be3def09a97d3f2f09"
 Entrez.tool = "MedicalImagingAnalyzer"
 
 
@@ -347,324 +349,113 @@ def search_clinical_trials(keywords, max_results=3):
         return []
 
 
+def extract_differentials(text):
+    primary = None
+    diffs = []
+
+    for line in text.split("\n"):
+        clean = line.strip()
+        low = clean.lower()
+
+        if "primary diagnosis" in low:
+            primary = clean.split(":",1)[-1].strip()
+
+        if re.match(r"^\d+\.", clean):
+            name = clean.split(":",1)[0]
+            name = re.sub(r"^\d+\.\s*", "", name)
+            diffs.append(name.strip())
+
+    if primary and primary not in diffs:
+        diffs.insert(0, primary)
+
+    return primary, list(dict.fromkeys(diffs))
 
 
 
-# Generate Repord PDF
+
 def generate_report(data, include_references=True):
-    """Generate a PDF report with analysis results"""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter)
     styles = getSampleStyleSheet()
 
-    # Custom styles
-    title_style = ParagraphStyle(
-        'Title',
-        parent=styles['Heading1'],
-        fontSize=18,
-        spaceAfter=12
-    )
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=18, spaceAfter=12)
+    subtitle_style = ParagraphStyle('Subtitle', parent=styles["Heading2"], fontSize=14, spaceAfter=8)
 
-    subtitle_style = ParagraphStyle(
-        'Subtitle',
-        parent=styles["Heading2"],
-        fontSize=14,
-        spaceAfter=8
-    )
-
-    # Build Content
     content = []
 
-    # Header 
+    # ---------------- HEADER ----------------
     content.append(Paragraph("Medical Imaging Analysis Report", title_style))
     content.append(Spacer(1, 12))
 
-    # Date and ID
     content.append(Paragraph(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}", styles["Normal"]))
     content.append(Paragraph(f"Report ID: {data['id']}", styles["Normal"]))
+
     if 'filename' in data:
         content.append(Paragraph(f"Image: {data['filename']}", styles["Normal"]))
+
     content.append(Spacer(1, 12))
 
-    from reportlab.platypus import ListFlowable, ListItem
+    # ---------------- AI CONFIDENCE ----------------
+    ai_conf = data.get("ai_confidence", "N/A")
+    content.append(Paragraph(f"<b>AI Confidence:</b> {ai_conf}%", styles["Heading2"]))
+    content.append(Spacer(1, 12))
 
-    # ---- Analysis Section - structured, robust formatting ----
-    content.append(Paragraph("Analysis Results", subtitle_style))
+    from reportlab.platypus import KeepTogether
 
+
+
+    # ---------------- ANALYSIS TEXT ----------------
     analysis_text = data.get("analysis", "") or ""
-
-    # Clean markdown formatting (keep bullets, remove asterisks)
-    import re
-    analysis_text = re.sub(r"\*\*(.*?)\*\*", r"\1", analysis_text)  # remove **bold**
-    analysis_text = analysis_text.replace("*", "")  # remove stray single asterisks
-
-
-
-    # Normalize common markdown-like tokens
+    analysis_text = re.sub(r"\*\*(.*?)\*\*", r"\1", analysis_text)
+    analysis_text = analysis_text.replace("*", "")
     analysis_text = analysis_text.replace("\r\n", "\n").replace("\r", "\n")
 
+    content.append(Paragraph("Analysis Results", subtitle_style))
 
-    # === Model confidence & metrics (PDF-only section) ===
-    # Compute heuristic metrics (not shown in UI). These appear only in PDF.
-    metrics = compute_model_confidence(analysis_text)
-
-    # Generate chart image (use non-interactive backend and absolute path)
-    try:
-        import matplotlib
-        matplotlib.use("Agg")            # IMPORTANT on servers
-        import matplotlib.pyplot as plt
-
-        metrics_filename = f"temp_metrics_{uuid.uuid4().hex}.png"
-        metrics_fig_path = os.path.abspath(metrics_filename)
-
-        labels = ["Probability", "Precision", "Recall", "F1"]
-        values = [
-            float(metrics.get("probability", 0)),
-            float(metrics.get("precision", 0)),
-            float(metrics.get("recall", 0)),
-            float(metrics.get("f1", 0)),
-        ]
-
-        plt.figure(figsize=(5, 2.8))
-        bars = plt.bar(labels, values, edgecolor="black")
-        plt.ylim(0, 100)
-        plt.ylabel("Percent (%)")
-        plt.title("Model confidence & metrics")
-        for bar, val in zip(bars, values):
-            h = bar.get_height()
-            plt.text(bar.get_x() + bar.get_width()/2.0, h + 1.5, f"{int(round(val))}%", ha="center", fontsize=9)
-
-        plt.tight_layout()
-        plt.savefig(metrics_fig_path, dpi=150, bbox_inches="tight")
-        plt.close()
-    except Exception as e:
-        print("Failed to generate metrics chart:", e)
-        metrics_fig_path = None
-
-    # Insert Model Confidence text + chart into PDF (this section is NOT shown in Streamlit UI)
-    try:
-        content.append(Paragraph("Model Confidence & Evaluation (Internal)", subtitle_style))
-        content.append(Spacer(1, 6))
-
-        content.append(Paragraph(
-            f"Overall Model Confidence: <b>{metrics.get('probability', 0)}%</b>",
-            styles["Normal"]
-        ))
-        content.append(Paragraph(
-            f"Precision: {metrics.get('precision', 0)}% — Recall: {metrics.get('recall', 0)}% — F1 Score: {metrics.get('f1', 0)}%",
-            styles["Normal"]
-        ))
-        content.append(Spacer(1, 6))
-
-        if metrics.get("notes"):
-            content.append(Paragraph(metrics.get("notes"), styles["Normal"]))
-            content.append(Spacer(1, 6))
-
-        if metrics_fig_path and os.path.exists(metrics_fig_path):
-            try:
-                content.append(RPImage(metrics_fig_path, width=4.5 * inch))
-                content.append(Spacer(1, 12))
-            except Exception as e:
-                print("Failed to insert metrics image into PDF:", e)
-    except Exception as e:
-        print("Failed adding Model Confidence block:", e)
-
-
-
-
-    # Try splitting into sections by "###" or by numeric headings
+    # ---------------- SPLIT SECTIONS ----------------
     sections = []
     if "###" in analysis_text:
         raw_sections = [s.strip() for s in analysis_text.split("###") if s.strip()]
         for sec in raw_sections:
-            # first line is heading if it looks like a short header
             lines = sec.split("\n")
             heading = lines[0].strip()
             body = "\n".join(lines[1:]).strip()
             sections.append((heading, body))
     else:
-        # fallback: attempt to split by numeric "1." etc.
-        # create one default section
         sections = [("Report", analysis_text)]
 
-    # Helper to create bullet paragraphs
-    def add_bulleted_lines(text):
-        items = []
-        for line in text.split("\n"):
-            line = line.strip()
-            if not line:
-                continue
-            # treat leading '-' or '•' or '•' variants as bullets
-            if line.startswith("-") or line.startswith("•"):
-                item_text = line.lstrip("-• ").strip()
-                items.append(ListItem(Paragraph(item_text, styles["Normal"]), leftIndent=8))
-            else:
-                # normal paragraph line
-                items.append(Paragraph(line, styles["Normal"]))
-        return items
-
-    # Add each section to the content flow
+    # ---------------- RENDER SECTIONS ----------------
     for heading, body in sections:
-        # Create heading paragraph (bold)
-        heading_text = heading.strip()
-        if heading_text:
-            # remove hash marks (### etc.)
-            heading_text = heading_text.lstrip('#').strip()
+        heading_text = heading.strip().lstrip("#").strip()
+        content.append(Paragraph(f"<b>{heading_text}</b>", styles["Heading2"]))
+        content.append(Spacer(1, 10))
 
-            # bold main sections and leave extra space
-            important_sections = [
-                "Image Type & Region",
-                "Key Findings",
-                "Diagnostic Assessment",
-                "Patient-Friendly Explanation",
-                "Research Context",
-                "References",
-                "Keywords"
-            ]
-
-            # Check if the heading matches an important section
-            if any(sec.lower() in heading_text.lower() for sec in important_sections):
-                content.append(Paragraph(f"<b>{heading_text}</b>", styles["Heading2"]))  # removed underline
-
-                content.append(Spacer(1, 12))  # one-line gap after big section titles
-            else:
-                content.append(Paragraph(f"<b>{heading_text}</b>", styles["Heading3"]))
-                content.append(Spacer(1, 6))
-
-        # If body contains bullet markers or line breaks, render as bullets/paras
         if body:
             body_lines = [ln.strip() for ln in body.split("\n") if ln.strip()]
             if any(ln.startswith("-") or ln.startswith("•") for ln in body_lines):
-                list_items = []
-                for ln in body_lines:
-                    if ln.startswith("-") or ln.startswith("•"):
-                        txt = ln.lstrip("-• ").strip()
-                        list_items.append(ListItem(Paragraph(txt, styles["Normal"])))
-                    else:
-                        list_items.append(ListItem(Paragraph(ln, styles["Normal"])))
-                if list_items:
-                    content.append(ListFlowable(list_items, bulletType="bullet", start="•"))
-                    content.append(Spacer(1, 6))
+                items = [ListItem(Paragraph(ln.lstrip("-• ").strip(), styles["Normal"])) for ln in body_lines]
+                content.append(ListFlowable(items, bulletType="bullet"))
             else:
-                analysis_style = ParagraphStyle(
-                    "AnalysisText",
-                    parent=styles["Normal"],
-                    alignment=4,  # justify
-                    fontSize=11,
-                    leading=14,
-                    spaceAfter=8
-                )
-                joined = " ".join([ln for ln in body.split("\n") if ln.strip()])
-                content.append(Paragraph(joined, analysis_style))
-                content.append(Spacer(1, 12))
+                content.append(Paragraph(" ".join(body_lines), styles["Normal"]))
+
+            content.append(Spacer(1, 12))
+
+    # ---------------- REFERENCES ----------------
+    if include_references:
+        pubmed_results = search_pubmed(data.get('keywords', []), max_results=3)
+        if pubmed_results:
+            content.append(Paragraph("Relevant Medical Literature", subtitle_style))
+            for ref in pubmed_results:
+                content.append(Paragraph(ref['title'], styles["Normal"]))
+                content.append(Paragraph(f"{ref['journal']} ({ref['year']}) PMID:{ref['id']}", styles["Normal"]))
+            content.append(Spacer(1, 12))
+
+    doc.build(content)
+    buffer.seek(0)
+    return buffer
 
 
 
-        # add a separator line before references/keywords
-        # After all sections are processed, add a separator line before references/keywords
-        content.append(Spacer(1, 0.12 * inch))
-        content.append(Table(
-            [[""]],
-            colWidths=[7.2 * inch],
-            style=TableStyle([("LINEBELOW", (0, 0), (-1, -1), 0.5, colors.grey)])
-        ))
-        content.append(Spacer(1, 0.12 * inch))
-
-        # Disable Keywords section in the downloaded PDF
-        # (They remain visible in Streamlit app)
-        if False:
-            if data.get('keywords'):
-                content.append(Paragraph("<b>Keywords</b>", subtitle_style))
-                if isinstance(data['keywords'], list):
-                    keywords_text = ', '.join(data['keywords'])
-                else:
-                    keywords_text = str(data['keywords'])
-                content.append(Paragraph(keywords_text, styles["Normal"]))
-                content.append(Spacer(1, 12))
-
-
-    # === Model confidence & metrics (PDF-only section) ===
-    metrics = compute_model_confidence(analysis_text)
-
-    # Generate chart into an in-memory buffer (avoids file/OneDrive issues)
-    metrics_buf = None
-    try:
-        import matplotlib.pyplot as plt
-        from reportlab.lib.utils import ImageReader
-
-        labels = ["Probability", "Precision", "Recall", "F1"]
-        values = [
-            float(metrics.get("probability", 0)),
-            float(metrics.get("precision", 0)),
-            float(metrics.get("recall", 0)),
-            float(metrics.get("f1", 0)),
-        ]
-
-        plt.figure(figsize=(5, 2.8))
-        bars = plt.bar(labels, values, edgecolor="black")
-        plt.ylim(0, 100)
-        plt.ylabel("Percent (%)")
-        plt.title("Model confidence & metrics")
-        for bar, val in zip(bars, values):
-            h = bar.get_height()
-            plt.text(bar.get_x() + bar.get_width() / 2.0, h + 1.5, f"{int(round(val))}%", ha="center", fontsize=9)
-
-        plt.tight_layout()
-
-        # save to BytesIO
-        metrics_buf = io.BytesIO()
-        plt.savefig(metrics_buf, format="png", dpi=150, bbox_inches="tight")
-        plt.close()
-        metrics_buf.seek(0)
-
-        # create ImageReader from buffer
-        metrics_img_reader = ImageReader(metrics_buf)
-
-    except Exception as e:
-        print("Failed to generate metrics chart (in-memory):", e)
-        metrics_buf = None
-        metrics_img_reader = None
-
-
-    # Insert Model Confidence text + chart into PDF (NOT shown in UI)
-    try:
-        content.append(Paragraph("Model Confidence & Evaluation (Internal)", subtitle_style))
-        content.append(Spacer(1, 6))
-
-        content.append(Paragraph(
-            f"Overall Model Confidence: <b>{metrics.get('probability', 0)}%</b>",
-            styles["Normal"]
-        ))
-        content.append(Paragraph(
-            f"Precision: {metrics.get('precision', 0)}% — Recall: {metrics.get('recall', 0)}% — F1 Score: {metrics.get('f1', 0)}%",
-            styles["Normal"]
-        ))
-        content.append(Spacer(1, 6))
-
-        if metrics.get("notes"):
-            content.append(Paragraph(metrics.get("notes"), styles["Normal"]))
-            content.append(Spacer(1, 6))
-
-        if metrics_img_reader is not None:
-            try:
-                # RPImage is alias for reportlab.platypus.Image imported earlier
-                content.append(RPImage(metrics_img_reader, width=4.5 * inch))
-                content.append(Spacer(1, 12))
-            except Exception as e:
-                print("Failed to insert metrics image into PDF (ImageReader):", e)
-        else:
-            # optional debug
-            print("Skipping inserting metrics image: no image reader available")
-
-    except Exception as e:
-        print("Failed adding Model Confidence block:", e)
-    finally:
-        # close buffer if exists
-        try:
-            if metrics_buf:
-                metrics_buf.close()
-        except Exception:
-            pass
 
 
 
@@ -692,12 +483,6 @@ def generate_report(data, include_references=True):
     # Build the PDF (after all content appended)
     doc.build(content)
 
-    # cleanup temporary chart file AFTER doc build
-    try:
-        if 'metrics_fig_path' in locals() and metrics_fig_path and os.path.exists(metrics_fig_path):
-            os.remove(metrics_fig_path)
-    except Exception:
-        pass
 
     buffer.seek(0)
     return buffer

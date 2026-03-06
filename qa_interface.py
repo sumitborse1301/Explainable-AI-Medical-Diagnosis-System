@@ -75,8 +75,17 @@ def render_qa_chat_interface():
 
             # Option to clear chat history
             if st.button("Clear Conversation History", key="clear_qa_hist"):
-                st.session_state.qa_system.clear_history()     
-                st.info("Conversation history has been cleared.")
+
+                # 1. Clear AI memory
+                st.session_state.qa_system.clear_history()
+
+                # 2. Clear stored room messages
+                if "current_qa_id" in st.session_state:
+                    st.session_state.qa_chat.clear_room_messages(st.session_state.current_qa_id)
+
+                st.success("Conversation history has been cleared.")
+                st.rerun()
+
 
             # Display messages
             messages = st.session_state.qa_chat.get_messages(qa_id)
