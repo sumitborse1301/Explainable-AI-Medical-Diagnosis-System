@@ -34,6 +34,13 @@ from util_simple import(
 from chat_system import render_chat_interface, create_manual_chat_room
 from qa_interface import render_qa_chat_interface
 
+# =========================
+# Landing Page Session State
+# =========================
+if "entered" not in st.session_state:
+    st.session_state.entered = False
+
+
 UPLOAD_DIR = "uploaded_images"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -76,6 +83,259 @@ st.set_page_config(
     layout="wide"
 )
 
+
+# =========================
+# LANDING PAGE
+# =========================
+if not st.session_state.entered:
+
+    st.markdown("""
+    <style>
+
+    .hero{
+        text-align:center;
+        padding-top:80px;
+        padding-bottom:60px;
+    }
+
+    .hero h1{
+        font-size:60px;
+        font-weight:700;
+    }
+
+    .hero p{
+        font-size:22px;
+        color:#bdbdbd;
+    }
+
+    .feature-card{
+        background:#111827;
+        padding:30px;
+        border-radius:15px;
+        text-align:center;
+        box-shadow:0px 6px 20px rgba(0,0,0,0.3);
+        transition:0.3s;
+    }
+
+    .feature-card:hover{
+        transform:translateY(-5px);
+    }
+
+    .tech-card{
+        background:#0f172a;
+        padding:20px;
+        border-radius:10px;
+        text-align:center;
+        font-weight:500;
+    }
+
+    .cta{
+        text-align:center;
+        padding-top:50px;
+        padding-bottom:80px;
+    }
+
+    </style>
+    """, unsafe_allow_html=True)
+
+    # HERO
+    st.markdown("""
+    <div class="hero">
+        <h1>🧠 Explainable AI Assisted Doctor Diagnosis System</h1>
+        <p>AI-powered clinical decision support for medical image analysis using deep learning and explainable AI.</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("## 🚀 Key Features")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.markdown("""
+        <div class="feature-card">
+        <h3>Brain Tumor Detection</h3>
+        <p>MRI-based AI detection of brain tumors with explainable heatmaps.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col2:
+        st.markdown("""
+        <div class="feature-card">
+        <h3>Chest Disease Detection</h3>
+        <p>AI analysis of X-ray images for pneumonia, tuberculosis and lung abnormalities.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col3:
+        st.markdown("""
+        <div class="feature-card">
+        <h3>Bone Fracture Detection</h3>
+        <p>Deep learning model identifies bone fractures from radiographic images.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.write("")
+
+    col4, col5, col6 = st.columns(3)
+
+    with col4:
+        st.markdown("""
+        <div class="feature-card">
+        <h3>Explainable AI</h3>
+        <p>Grad-CAM visual heatmaps highlight regions influencing the prediction.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col5:
+        st.markdown("""
+        <div class="feature-card">
+        <h3>AI Clinical Explanation</h3>
+        <p>LLM-generated clinical reasoning assists doctors in understanding results.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with col6:
+        st.markdown("""
+        <div class="feature-card">
+        <h3>Medical Report Generation</h3>
+        <p>Automatically generates downloadable PDF medical reports.</p>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.markdown("## ⚙️ Technology Stack")
+
+    t1,t2,t3,t4,t5,t6 = st.columns(6)
+
+    t1.markdown('<div class="tech-card">PyTorch</div>', unsafe_allow_html=True)
+    t2.markdown('<div class="tech-card">EfficientNet</div>', unsafe_allow_html=True)
+    t3.markdown('<div class="tech-card">DenseNet</div>', unsafe_allow_html=True)
+    t4.markdown('<div class="tech-card">Grad-CAM</div>', unsafe_allow_html=True)
+    t5.markdown('<div class="tech-card">OpenAI API</div>', unsafe_allow_html=True)
+    t6.markdown('<div class="tech-card">Streamlit</div>', unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.markdown("## 🔬 How It Works")
+
+    st.markdown("""
+    <style>
+
+    .workflow-card{
+    background:#0f172a;
+    padding:25px;
+    border-radius:12px;
+    text-align:center;
+    box-shadow:0px 5px 15px rgba(0,0,0,0.35);
+    transition:0.3s;
+    }
+
+    .workflow-card:hover{
+    transform:translateY(-6px);
+    background:#111827;
+    }
+
+    .workflow-icon{
+    font-size:40px;
+    margin-bottom:10px;
+    }
+
+    .workflow-title{
+    font-size:18px;
+    font-weight:600;
+    margin-bottom:8px;
+    }
+
+    .workflow-text{
+    font-size:14px;
+    color:#bdbdbd;
+    }
+
+    </style>
+    """, unsafe_allow_html=True)
+
+    c1,c2,c3,c4,c5 = st.columns(5)
+
+    with c1:
+        st.markdown("""
+        <div class="workflow-card">
+        <div class="workflow-icon">📤</div>
+        <div class="workflow-title">Upload Image</div>
+        <div class="workflow-text">Upload MRI or X-ray medical image for AI analysis.</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with c2:
+        st.markdown("""
+        <div class="workflow-card">
+        <div class="workflow-icon">🧬</div>
+        <div class="workflow-title">Select Disease</div>
+        <div class="workflow-text">Choose brain tumor, chest disease, or bone fracture.</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with c3:
+        st.markdown("""
+        <div class="workflow-card">
+        <div class="workflow-icon">🤖</div>
+        <div class="workflow-title">AI Analysis</div>
+        <div class="workflow-text">Deep learning model analyzes the medical image.</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with c4:
+        st.markdown("""
+        <div class="workflow-card">
+        <div class="workflow-icon">🔥</div>
+        <div class="workflow-title">Explainable AI</div>
+        <div class="workflow-text">Grad-CAM heatmap highlights important regions.</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with c5:
+        st.markdown("""
+        <div class="workflow-card">
+        <div class="workflow-icon">📄</div>
+        <div class="workflow-title">Medical Report</div>
+        <div class="workflow-text">AI generates clinical explanation and report.</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.markdown("""
+    <style>
+
+    div.stButton > button {
+    background: linear-gradient(135deg,#ef4444,#dc2626,#b91c1c);
+    color:white;
+    font-size:38px;   /* BIGGER TEXT */
+    font-weight:900;  /* EXTRA BOLD */
+    padding:28px 70px;
+    border-radius:50px;
+    border:none;
+    box-shadow:0px 10px 30px rgba(0,0,0,0.4);
+    transition:all 0.35s ease;
+    width:100%;
+    }
+
+    div.stButton > button:hover{
+    transform:translateY(-6px) scale(1.03);
+    box-shadow:0px 20px 50px rgba(255,0,0,0.45);
+    background: linear-gradient(135deg,#f87171,#ef4444,#dc2626);
+    }
+
+    </style>
+    """, unsafe_allow_html=True)
+
+
+    # Create columns to center the button
+    left, center, right = st.columns([3.8,3,2])
+
+    with center:
+        if st.button("🚀 Launch Diagnosis System"):
+            st.session_state.entered = True
+            st.rerun()
+
+    st.stop()
 
 # =========================
 # Custom CSS
