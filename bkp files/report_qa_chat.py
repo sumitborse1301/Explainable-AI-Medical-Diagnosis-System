@@ -11,7 +11,7 @@ import time
 
 
 # --- GROQ API helper for text generation (free and fast) ---
-GROQ_API_KEY = "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"  # <-- Replace with your actual key from https://console.groq.com
+GROQ_API_KEY = "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"  # <-- Replace with your actual key from https://console.groq.com
 
 import time
 
@@ -21,7 +21,7 @@ def query_groq(messages, retries=3, backoff=3):
     data = {
         "model": "llama-3.1-8b-instant",
         "messages": messages,
-        "max_tokens": 500
+        "max_tokens": 800
     }
 
     for attempt in range(retries):
@@ -218,129 +218,44 @@ class ReportQASystem:
         top_contexts = [context["text"] for _, context in similarities[:top_k]]
 
         return top_contexts
-    
-
-    
 
     def answer_question(self, question):
-
-        q = question.lower()
-
-        # ---------------- HANDLE RECENT IMAGE QUESTIONS ----------------
-        if "recent" in q or "latest" in q or "last image" in q:
-
-            analyses = self.analysis_store.get("analysis", [])
-
-            if not analyses:
-                return "No images have been analyzed yet."
-
-            analyses_sorted = sorted(
-                analyses,
-                key=lambda x: x.get("date", ""),
-                reverse=True
-            )
-
-            latest = analyses_sorted[0]
-
-            return f"""
-    The most recent image analyzed was: {latest.get('filename','unknown')}.
-
-    Analysis summary:
-    {latest.get('analysis','No analysis found.')}
-    """
-        # ----------------------------------------------------------------
-
-
-        # ---------------- HANDLE DIAGNOSIS QUESTIONS ----------------
-        if "disease" in q or "diagnosis" in q or "tumor" in q or "prediction" in q:
-
-            analyses = self.analysis_store.get("analysis", [])
-
-            if not analyses:
-                return "No images have been analyzed yet."
-
-            analyses_sorted = sorted(
-                analyses,
-                key=lambda x: x.get("date", ""),
-                reverse=True
-            )
-
-            latest = analyses_sorted[0]
-
-            disease = latest.get("ai_prediction", "unknown condition")
-            confidence = latest.get("ai_confidence", "unknown")
-
-            return f"The most recent diagnosis detected was: {disease} (confidence: {confidence}%)."
-        # ----------------------------------------------------------------
-
-
-        # ---------------- NORMAL RAG QUESTION ANSWERING ----------------
+        """Answer a question about medical reports using RAG + Groq"""
         if not self.api_key:
             return "Please provide an OpenAI API key to enable the QA system."
 
         contexts = self.get_relevant_contexts(question)
 
-        # Only prioritize latest analysis if user asks about latest/recent
-        if "recent" in q or "latest" in q or "last image" in q:
-
-            analyses = self.analysis_store.get("analysis", [])
-
-            if analyses:
-                analyses_sorted = sorted(
-                    analyses,
-                    key=lambda x: x.get("date", ""),
-                    reverse=True
-                )
-
-                latest_analysis = analyses_sorted[0].get("analysis", "")
-
-                if latest_analysis:
-                    contexts.insert(0, latest_analysis)
-
-
         if not contexts or contexts[0] == "No previous analyses found.":
             return "I don't have any medical reports to reference. Please upload and analyze some images first."
 
         combined_context = "\n\n---\n\n".join(contexts)
-
-        self.conversation_history.append({
-            "role": "user",
-            "content": question
-        })
+        self.conversation_history.append({"role": "user", "content": question})
 
         try:
             system_prompt = f"""
-    You are a concise medical AI assistant.
+            You are a concise medical AI assistant. 
+            Answer briefly in **no more than 3 short sentences**. 
+            Focus only on facts found in the context below, and avoid repeating data. 
+            If the answer is not clearly available, reply: "Not enough data found in recent analyses."
 
-    Always prioritize the most recent medical image analysis if the user asks about the latest or recent image.
+            Contexts:
+            {combined_context}
+            """
 
-    Answer briefly in no more than 3 sentences.
-
-    If the answer is not clearly available in the context, reply:
-    "Not enough data found in recent analyses."
-
-    Contexts:
-    {combined_context}
-    """
 
             messages = [{"role": "system", "content": system_prompt}] + self.conversation_history
 
+            # ✅ Use Groq API (free) for the answer
             answer = query_groq(messages)
 
-            self.conversation_history.append({
-                "role": "assistant",
-                "content": answer
-            })
-
+            self.conversation_history.append({"role": "assistant", "content": answer})
             if len(self.conversation_history) > 10:
                 self.conversation_history = self.conversation_history[-10:]
 
             return answer
-
         except Exception as e:
             return f"I encountered an error while answering your question: {str(e)}"
-
-
 
 
 class ReportQAChat:
@@ -365,14 +280,11 @@ class ReportQAChat:
         with open("qa_chat_store.json", "w") as f:
             json.dump(self.qa_chat_store, f)
 
-    def create_qa_room(self, user_name, room_name, password):
-
+    def create_qa_room(self, user_name, room_name):
         room_id = f"QA-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-
         room_data = {
             "id": room_id,
             "name": room_name,
-            "password": password,   # NEW
             "created_at": datetime.now().isoformat(),
             "creator": user_name,
             "messages": []
@@ -381,12 +293,11 @@ class ReportQAChat:
         welcome_message = {
             "id": str(uuid.uuid4()),
             "user": "Report QA System",
-            "content": f"Welcome to the Report QA Room: {room_name}.",
+            "content": f"Welcome to the Report QA Room: {room_name}. You can ask questions about your medical report, and I'll answer based on stored analyses.",
             "timestamp": datetime.now().isoformat()
         }
 
         room_data["messages"].append(welcome_message)
-
         self.qa_chat_store["rooms"][room_id] = room_data
         self.save_qa_chat_store()
 

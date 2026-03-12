@@ -533,7 +533,7 @@ if "latest_analyses" not in st.session_state:
 # =========================
 with st.sidebar:
     st.header("⚙️ Configuration")
-    api_key = st.text_input("Qwen / OpenRouter API Key", type="password")
+    api_key = st.text_input("OpenAI API Key", type="password")
     if api_key:
         st.session_state.openai_key = api_key
 

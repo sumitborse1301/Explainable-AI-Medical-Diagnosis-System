@@ -4,7 +4,7 @@ import json
 import os
 import uuid
 import time
-import requests
+from openai import OpenAI
 
 # =========================
 # STORAGE
@@ -29,7 +29,7 @@ def save_chat_store(store):
 # CORE CHAT FUNCTIONS
 # =========================
 
-def create_chat_room(case_id, creator_name, case_description, password):
+def create_chat_room(case_id, creator_name, case_description):
     store = get_chat_store()
 
     if case_id not in store["rooms"]:
@@ -38,7 +38,6 @@ def create_chat_room(case_id, creator_name, case_description, password):
             "created_at": datetime.now().isoformat(),
             "creator": creator_name,
             "description": case_description,
-            "password": password,   # NEW
             "participants": [creator_name, "Dr. AI Assistant"],
             "messages": []
         }
@@ -52,7 +51,6 @@ def create_chat_room(case_id, creator_name, case_description, password):
         }
 
         room_data["messages"].append(welcome_message)
-
         store["rooms"][case_id] = room_data
         save_chat_store(store)
 
@@ -114,7 +112,9 @@ def get_available_rooms():
 
 def get_openai_response(user_question, case_description, findings=None, api_key=None):
     if not api_key:
-        return "Please configure your OpenRouter API key in the sidebar."
+        return "Please configure your OpenAI API key in the sidebar."
+
+    client = OpenAI(api_key=api_key)
 
     findings_text = ""
     if findings:
@@ -131,36 +131,19 @@ Reply in short, professional, clinical style.
 """
 
     try:
-
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost:8501",
-            "X-Title": "AI Doctor Diagnosis System"
-        }
-
-        data = {
-            "model": "openai/gpt-4o-mini",
-            "messages": [
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_question}
             ],
-            "max_tokens": 250,
-            "temperature": 0.2
-        }
-
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers=headers,
-            json=data
+            max_tokens=80,
+            temperature=0.2
         )
-
-        result = response.json()
-        return result["choices"][0]["message"]["content"]
+        return response.choices[0].message.content
 
     except Exception as e:
         return f"AI Error: {e}"
-
 
 
 # =========================
@@ -185,40 +168,27 @@ def render_chat_interface():
         if rooms:
             room_options = {f"{r['id']} - {r['description']}": r["id"] for r in rooms}
             selected = st.selectbox("Select Case", list(room_options.keys()))
-            join_password = st.text_input("Enter Room Password", type="password")
 
             if st.button("Join Discussion"):
-
                 cid = room_options[selected]
-                store = get_chat_store()
-
-                room_password = store["rooms"][cid].get("password")
-
-                if room_password is None or join_password == room_password:
-
-                    join_chat_room(cid, user_name)
-                    st.session_state.current_case_id = cid
-                    st.rerun()
-
-                else:
-                    st.error("Incorrect password")
+                join_chat_room(cid, user_name)
+                st.session_state.current_case_id = cid
+                st.rerun()
+        else:
+            st.info("No active discussions available.")
 
     # ---------- CREATE CASE ----------
     with tab2:
         desc = st.text_input("Case Description")
-        password = st.text_input("Set Room Password", type="password")
         case_id = f"CASE-{datetime.now().strftime('%Y%m%d%H%M%S')}"
 
         if st.button("Create Discussion"):
-            if desc.strip() and password.strip():
-
-                cid = create_chat_room(case_id, user_name, desc, password)
-
+            if desc.strip():
+                cid = create_chat_room(case_id, user_name, desc)
                 st.session_state.current_case_id = cid
                 st.rerun()
-
             else:
-                st.error("Please enter description and password.")
+                st.error("Please enter a case description.")
 
     # ---------- ACTIVE CHAT ----------
     if "current_case_id" in st.session_state:
@@ -268,4 +238,4 @@ def render_chat_interface():
 
 def create_manual_chat_room(creator_name, case_description):
     case_id = f"CASE-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-    return create_chat_room(case_id, creator_name, case_description, "default")
+    return create_chat_room(case_id, creator_name, case_description)

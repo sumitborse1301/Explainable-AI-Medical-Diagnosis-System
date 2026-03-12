@@ -35,62 +35,26 @@ def render_qa_chat_interface():
         # Show available QA rooms
         qa_rooms = st.session_state.qa_chat.get_qa_rooms()
         if qa_rooms:
-
             room_options = {f"{room['name']} (by {room['creator']})": room["id"]
             for room in qa_rooms}
-
-            selected_room = st.selectbox(
-                "Select Q&A Room",
-                options=list(room_options.keys()),
-                key="qa_room_select"
-            )
-
-            join_password = st.text_input(
-                "Enter Room Password",
-                type="password",
-                key="qa_join_pass"
-            )
+            selected_room = st.selectbox("Select Q&A Room", options=list(room_options.keys()), key="qa_room_select")
 
             if st.button("Join Q&A Room", key="join_qa_btn"):
-
                 selected_qa_id = room_options[selected_room]
-
-                store = st.session_state.qa_chat.qa_chat_store
-
-                room_password = store["rooms"][selected_qa_id].get("password")
-
-                if room_password is None or join_password == room_password:
-
-                    st.session_state.current_qa_id = selected_qa_id
-                    st.rerun()
-
-                else:
-                    st.error("Incorrect room password")
-
+                st.session_state.current_qa_id = selected_qa_id
+                st.rerun()
         else:
             st.info("No active Q&A rooms. Create a new one!")
     
     with qa_tab2:
         # Create a new QA Room
-        # Create a new QA Room
         room_name = st.text_input("Q&A Room Name", key="qa_room_name_input")
-        password = st.text_input("Set Room Password", type="password", key="qa_room_pass")
 
         if st.button("Create Q&A Room", key="create_qa_btn"):
-
-            if room_name and password:
-
-                created_qa_id = st.session_state.qa_chat.create_qa_room(
-                    user_name,
-                    room_name,
-                    password
-                )
-
+            if room_name:
+                created_qa_id = st.session_state.qa_chat.create_qa_room(user_name, room_name)
                 st.session_state.current_qa_id = created_qa_id
                 st.rerun()
-
-            else:
-                st.error("Please enter room name and password")
 
     # Active Q&A chat display
     if "current_qa_id" in st.session_state:

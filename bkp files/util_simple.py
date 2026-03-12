@@ -10,7 +10,7 @@ import base64
 import uuid
 import os
 import json
-import requests
+from openai import OpenAI
 from Bio import Entrez
 import matplotlib.pyplot as plt
 from PIL import Image
@@ -196,37 +196,33 @@ def extract_findings_and_keywords(analysis_text):
     return findings, keywords[:5]
 
 
-# Analyzation of Image - Groq
+# Analyzation of Image - OpenAI
+
+from openai import OpenAI
 
 def analyze_image(image, api_key, enable_xai=True):
+    """Analyze medical image using OPENAI's vision model"""
     import io, base64, uuid
     from datetime import datetime
-    from openai import OpenAI
 
+    # Convert the image to base64
     buffered = io.BytesIO()
     image.save(buffered, format="PNG")
     encoded_image = base64.b64encode(buffered.getvalue()).decode()
 
-    client = OpenAI(
-        base_url="https://openrouter.ai/api/v1",
-        api_key=api_key
-    )
+    # Initialize client using new SDK
+    client = OpenAI(api_key=api_key)
 
     try:
         response = client.chat.completions.create(
-            model="openai/gpt-4o-mini",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": SYSTEM_MESSAGE},
                 {
                     "role": "user",
                     "content": [
                         {"type": "text", "text": ANALYSIS_PROMPT},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/png;base64,{encoded_image}"
-                            }
-                        }
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{encoded_image}"}}
                     ],
                 },
             ],
@@ -235,10 +231,11 @@ def analyze_image(image, api_key, enable_xai=True):
 
         analysis = response.choices[0].message.content
 
+        # Include note if XAI visualization is enabled
         if enable_xai:
-            analysis += "\n\n[XAI Visualization Enabled]"
+            analysis += "\n\n[XAI Visualization Enabled: Heatmap generation will assist in interpretability.]"
         else:
-            analysis += "\n\n[XAI Visualization Disabled]"
+            analysis += "\n\n[XAI Visualization Disabled.]"
 
         findings, keywords = extract_findings_and_keywords(analysis)
 
@@ -258,6 +255,7 @@ def analyze_image(image, api_key, enable_xai=True):
             "keywords": [],
             "date": datetime.now().isoformat(),
         }
+
 
 
 # PubMed Articles
@@ -501,7 +499,7 @@ def get_analysis_store():
 
 def save_analysis(analysis_data, filename="unknown.jpg"):
     """Save analysis data to storage with real embeddings (cached, 1536-dim)."""
-    
+    from openai import OpenAI
     import numpy as np
     import json, os, time
 
@@ -519,16 +517,31 @@ def save_analysis(analysis_data, filename="unknown.jpg"):
     EMB_DIM = 1536
 
     # Try OpenAI embeddings if API key available
-    # Generate simple deterministic embedding (no OpenAI required)
-    txt = analysis_data.get("analysis", "") or filename
+    try:
+        client_key = analysis_data.get("api_key") or os.environ.get("OPENAI_API_KEY") or None
+        if client_key:
+            client = OpenAI(api_key=client_key)
+            text_to_embed = analysis_data.get("analysis", "") or ""
+            if text_to_embed.strip():
+                resp = client.embeddings.create(input=text_to_embed, model="text-embedding-3-small")
+                emb = resp.data[0].embedding
+                # ensure list of floats
+                analysis_data["embedding"] = list(map(float, emb))[:EMB_DIM]
+            else:
+                analysis_data["embedding"] = list(np.random.rand(EMB_DIM))
+        else:
+            # No OpenAI key — use deterministic fallback (hash -> repeat/pad)
+            txt = analysis_data.get("analysis", "") or filename
+            # deterministic pseudo-embedding: reproducible hash -> floats
+            h = np.frombuffer((txt.encode("utf-8") * 5)[:EMB_DIM], dtype=np.uint8)
+            emb = (h.astype(float) / 255.0).tolist()
+            if len(emb) < EMB_DIM:
+                emb = emb + list(np.random.RandomState(0).rand(EMB_DIM - len(emb)))
+            analysis_data["embedding"] = emb[:EMB_DIM]
 
-    h = np.frombuffer((txt.encode("utf-8") * 5)[:EMB_DIM], dtype=np.uint8)
-    emb = (h.astype(float) / 255.0).tolist()
-
-    if len(emb) < EMB_DIM:
-        emb = emb + list(np.random.RandomState(0).rand(EMB_DIM - len(emb)))
-
-    analysis_data["embedding"] = emb[:EMB_DIM]
+    except Exception as e:
+        print("Embedding generation failed:", e)
+        analysis_data["embedding"] = list(np.random.RandomState(0).rand(EMB_DIM))
 
     # Add to store
     store["analysis"].append(analysis_data)
