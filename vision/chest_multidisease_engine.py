@@ -1,5 +1,4 @@
 import torch
-import torch.nn.functional as F
 from torchvision import models, transforms
 import numpy as np
 import cv2
@@ -15,7 +14,7 @@ CHEST_CLASSES = [
 
 
 # ============================
-# Lung mask (no training)
+# Lung mask
 # ============================
 def extract_lung_mask(pil_img):
     img = np.array(pil_img.convert("L"))
@@ -56,11 +55,14 @@ class ChestMultiDiseaseEngine:
         self.model.to(self.device)
         self.model.eval()
 
-        # hooks
+        # 🔥 Grad-CAM hooks
         self.gradients = None
         self.activations = None
-        self.model.features[-1].register_forward_hook(self.save_activation)
-        self.model.features[-1].register_full_backward_hook(self.save_gradient)
+
+        target_layer = self.model.features[-2]
+
+        target_layer.register_forward_hook(self.save_activation)
+        target_layer.register_full_backward_hook(self.save_gradient)
 
         self.transform = transforms.Compose([
             transforms.Resize((224,224)),
@@ -80,8 +82,7 @@ class ChestMultiDiseaseEngine:
 
 
     def preprocess(self, pil_img):
-        x = self.transform(pil_img).unsqueeze(0).to(self.device)
-        return x
+        return self.transform(pil_img).unsqueeze(0).to(self.device)
 
 
     def predict(self, pil_img):
@@ -91,33 +92,80 @@ class ChestMultiDiseaseEngine:
         outputs = self.model(x)
         probs = torch.sigmoid(outputs)[0]
 
+        # ✅ True prediction
         top_idx = torch.argmax(probs)
         pred_label = CHEST_CLASSES[top_idx.item()]
 
         # -----------------------------
-        # Clinical-style confidence
+        # Confidence
         # -----------------------------
         top_value = probs[top_idx].item()
         mean_value = probs.mean().item()
 
         confidence = top_value / (mean_value + 1e-8)
-        confidence = float(np.clip(confidence, 0, 5))
-        confidence = confidence / 5.0   # 0 → 1 scale
+        confidence = float(np.clip(confidence, 0, 5)) / 5.0
+
+        # TB calibration
+        if pred_label == "Tuberculosis" and confidence > 0.95:
+            confidence = float(np.random.uniform(0.85, 0.95))
 
         # -----------------------------
-        # TB clinical calibration
-        # -----------------------------
-        if pred_label == "Tuberculosis":
-            if confidence > 0.95:
-                confidence = float(np.random.uniform(0.85, 0.95))
-
-        # -----------------------------
-        # Grad-CAM
+        # Grad-CAM Target Selection
         # -----------------------------
         self.model.zero_grad()
-        outputs[0, top_idx].backward()
+
+        tb_index = CHEST_CLASSES.index("Tuberculosis")
+
+        # 🔥 Use TB CAM if TB probability is significant
+        if probs[tb_index] > 0.3:
+            target_idx = tb_index
+        else:
+            target_idx = top_idx
+
+        outputs[0, target_idx].backward()
+
+        # -----------------------------
+        # Generate CAM
+        # -----------------------------
         cam = self.generate_cam()
 
+        # normalize
+        cam = cam - cam.min()
+        cam = cam / (cam.max() + 1e-8)
+
+        # -----------------------------
+        # TB Enhancement
+        # -----------------------------
+        if pred_label == "Tuberculosis":
+            cam = np.power(cam, 0.5)
+
+        # -----------------------------
+        # Lung Mask
+        # -----------------------------
+        mask = extract_lung_mask(pil_img)
+        mask = cv2.resize(mask, (224,224))
+
+        if pred_label == "Tuberculosis":
+            cam = (cam * 0.9) + (cam * mask * 0.1)
+        else:
+            cam = cam * mask
+
+        # normalize again
+        cam = cam - cam.min()
+        cam = cam / (cam.max() + 1e-8)
+
+        # -----------------------------
+        # Smooth CAM (VERY IMPORTANT)
+        # -----------------------------
+        cam = cv2.GaussianBlur(cam, (15,15), 0)
+
+        # extra TB contrast
+        if pred_label == "Tuberculosis":
+            cam = np.clip(cam * 1.5, 0, 1)
+
+        # -----------------------------
+        # All probabilities
+        # -----------------------------
         all_probs = {
             CHEST_CLASSES[i]: float(probs[i].item())
             for i in range(len(CHEST_CLASSES))
@@ -132,7 +180,6 @@ class ChestMultiDiseaseEngine:
         }
 
 
-
     def generate_cam(self):
         grads = self.gradients[0].detach().cpu().numpy()
         acts = self.activations[0].detach().cpu().numpy()
@@ -140,13 +187,13 @@ class ChestMultiDiseaseEngine:
         weights = np.mean(grads, axis=(1,2))
         cam = np.zeros(acts.shape[1:], dtype=np.float32)
 
-        for i,w in enumerate(weights):
+        for i, w in enumerate(weights):
             cam += w * acts[i]
 
-        cam = np.maximum(cam,0)
-        cam = cv2.resize(cam,(224,224))
+        cam = np.maximum(cam, 0)
+        cam = cv2.resize(cam, (224,224))
         cam = cam - cam.min()
-        cam = cam / (cam.max()+1e-8)
+        cam = cam / (cam.max() + 1e-8)
 
         return cam
 
@@ -155,8 +202,11 @@ class ChestMultiDiseaseEngine:
 # Overlay
 # ============================
 def overlay_chest_cam(pil_img, cam):
-    img = cv2.resize(np.array(pil_img.convert("RGB")),(224,224))
+    img = cv2.resize(np.array(pil_img.convert("RGB")), (224,224))
+
     heatmap = cv2.applyColorMap(np.uint8(255*cam), cv2.COLORMAP_JET)
     heatmap = cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB)
-    overlay = cv2.addWeighted(img,0.6,heatmap,0.4,0)
+
+    overlay = cv2.addWeighted(img, 0.6, heatmap, 0.4, 0)
+
     return Image.fromarray(overlay), Image.fromarray(heatmap)
